@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3Dモデル横断検索（試作）</title>
+<style>
+  :root { --ink:#1c2430; --sub:#5b6675; --line:#dde3ea; --accent:#2563eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Hiragino Kaku Gothic ProN", sans-serif; color:var(--ink); background:#f4f6f9; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:18px 20px 14px; position:sticky; top:0; z-index:10; }
+  h1 { font-size:19px; margin:0 0 4px; }
+  .counts { color:var(--sub); font-size:13px; margin-bottom:12px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  #q { flex:1 1 260px; font-size:16px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; }
+  .chip { border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 14px; font-size:14px; cursor:pointer; }
+  .chip.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #status { padding:12px 20px 0; color:var(--sub); font-size:13px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; padding:14px 20px 8px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
+  .card img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#eef1f5; display:block; }
+  .card .body { padding:10px 12px 12px; display:flex; flex-direction:column; gap:5px; flex:1; }
+  .name { font-size:14px; font-weight:600; line-height:1.35; word-break:break-word; }
+  .meta { font-size:12px; color:var(--sub); line-height:1.5; word-break:break-word; }
+  .badges { display:flex; gap:5px; flex-wrap:wrap; margin-top:auto; padding-top:4px; }
+  .badge { font-size:11px; border-radius:6px; padding:2px 7px; background:#eef2ff; color:#3347c5; }
+  .badge.fmt { background:#e8f6ee; color:#177245; }
+  .card a { color:var(--accent); font-size:12px; text-decoration:none; }
+  .card a:hover { text-decoration:underline; }
+  #more { display:block; margin:10px auto 30px; padding:10px 26px; font-size:15px; border:1px solid var(--line); background:#fff; border-radius:10px; cursor:pointer; }
+  .note { padding:0 20px 26px; color:var(--sub); font-size:12px; line-height:1.7; }
+  .modebar { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  .modebar .chip.on { background:#1c2430; border-color:#1c2430; }
+  #swipe { display:none; padding:16px 20px 30px; }
+  #genreLabel { text-align:center; font-size:15px; color:var(--sub); margin-bottom:10px; }
+  #genreLabel b { color:var(--ink); font-size:17px; }
+  #stage { position:relative; width:min(430px, 92vw); margin:0 auto; }
+  #swipeCard { background:#fff; border:1px solid var(--line); border-radius:16px; overflow:hidden; touch-action:none; user-select:none; cursor:grab; box-shadow:0 8px 28px rgba(20,30,50,.12); }
+  #swipeCard img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#eef1f5; display:block; pointer-events:none; }
+  #swipeCard .body { padding:12px 16px 16px; }
+  #swipeCard .name { font-size:17px; }
+  .stamp { position:absolute; top:16px; font-size:19px; font-weight:700; padding:5px 12px; border-radius:8px; opacity:0; pointer-events:none; }
+  #stampFav { left:14px; color:#177245; border:2px solid #177245; background:rgba(232,246,238,.92); transform:rotate(-8deg); }
+  #stampSkip { right:14px; color:#8a4b2a; border:2px solid #8a4b2a; background:rgba(250,240,230,.92); transform:rotate(8deg); }
+  .swipeBtns { display:flex; justify-content:center; gap:12px; margin-top:16px; flex-wrap:wrap; }
+  .swipeBtns button { font-size:15px; padding:11px 18px; border-radius:999px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  .swipeBtns button.fav { background:#177245; border-color:#177245; color:#fff; }
+  #swipeInfo { text-align:center; color:var(--sub); font-size:13px; margin-top:12px; line-height:1.7; }
+</style>
+</head>
+<body>
+<header>
+  <h1>3Dモデル横断検索（試作）</h1>
+  <div class="counts" id="counts">読み込み中…</div>
+  <div class="bar">
+    <input id="q" type="search" placeholder="名前やカテゴリで検索（例: castle, chair, medieval）">
+  </div>
+  <div class="bar" id="chips" style="margin-top:8px"></div>
+  <div class="modebar">
+    <button class="chip on" id="modeList">一覧モード</button>
+    <button class="chip" id="modeCard">カードモード</button>
+    <button class="chip" id="favView">★ お気に入り <span id="favCount">0</span></button>
+  </div>
+</header>
+<section id="swipe">
+  <div id="genreLabel"></div>
+  <div id="stage">
+    <div id="swipeCard"></div>
+    <div class="stamp" id="stampFav">お気に入り</div>
+    <div class="stamp" id="stampSkip">スキップ</div>
+  </div>
+  <div class="swipeBtns">
+    <button id="btnGenreDown">▲ 前のジャンル</button>
+    <button id="btnSkip">✕ スキップ</button>
+    <button id="btnFav" class="fav">♥ お気に入り</button>
+    <button id="btnGenreUp">▼ 次のジャンル</button>
+  </div>
+  <div id="swipeInfo">右スワイプ＝お気に入り／左スワイプ＝スキップ／上下スワイプ＝ジャンル切替</div>
+</section>
+<div id="status"></div>
+<main id="grid"></main>
+<button id="more" style="display:none">もっと見る</button>
+<p class="note">
+  試作版です。Polyfork と ABO は全件、Sand3D は5データセットからのサンプル1,000件を索引に入れています。<br>
+  Polyfork と ABO のモデルは GLB／glTF がそのまま使えます。Sand3D のモデルは Python コードで、メッシュ化には Sand3D ライブラリ（Blender）を通します。
+  ライセンスと帰属は各カードの表示を確認してください。
+</p>
+<script>
+const PAGE = 96;
+let items = [], filtered = [], shown = 0, srcFilter = 'all', favOnly = false;
+
+/* お気に入り（端末内に保存） */
+const favKey = 'ms-favs-v1';
+let favs = [];
+try { favs = JSON.parse(localStorage.getItem(favKey) || '[]'); } catch (e) { favs = []; }
+const keyOf = it => `${it.src}|${it.name}|${it.dl || it.link}`;
+let favKeys = new Set(favs.map(keyOf));
+function saveFavs() {
+  localStorage.setItem(favKey, JSON.stringify(favs));
+  favKeys = new Set(favs.map(keyOf));
+  document.getElementById('favCount').textContent = favs.length;
+}
+
+const $grid = document.getElementById('grid');
+const $status = document.getElementById('status');
+const $more = document.getElementById('more');
+
+function card(it) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  const meta = [it.cat, it.sub].filter(Boolean).join(' · ');
+  el.innerHTML = `
+    <img loading="lazy" alt="">
+    <div class="body">
+      <div class="name"></div>
+      <div class="meta"></div>
+      <div class="badges">
+        <span class="badge"></span><span class="badge fmt"></span>
+      </div>
+      <div><a target="_blank" rel="noopener">詳細ページ</a>
+      ${it.dl ? ' · <a target="_blank" rel="noopener" class="dl">GLB</a>' : ''}</div>
+      <div class="meta lic"></div>
+      <div class="meta credit"></div>
+    </div>`;
+  el.querySelector('img').src = it.img;
+  el.querySelector('.name').textContent = it.name;
+  el.querySelector('.meta').textContent = meta;
+  el.querySelector('.badge').textContent = it.src;
+  el.querySelector('.badge.fmt').textContent = it.format;
+  el.querySelector('a').href = it.link;
+  if (it.dl) el.querySelector('.dl').href = it.dl;
+  el.querySelector('.lic').textContent = it.lic || '';
+  el.querySelector('.credit').textContent = it.credit || '';
+  return el;
+}
+
+function render() {
+  const frag = document.createDocumentFragment();
+  const upto = Math.min(shown + PAGE, filtered.length);
+  for (let i = shown; i < upto; i++) frag.appendChild(card(filtered[i]));
+  shown = upto;
+  $grid.appendChild(frag);
+  $status.textContent = `${filtered.length} 件ヒット（${shown} 件表示）`;
+  $more.style.display = shown < filtered.length ? 'block' : 'none';
+}
+
+function groupOf(src) { return src.startsWith('Sand3D') ? 'Sand3D' : src; }
+
+function apply() {
+  const words = document.getElementById('q').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  filtered = items.filter(it => {
+    if (favOnly && !favKeys.has(keyOf(it))) return false;
+    if (srcFilter !== 'all' && groupOf(it.src) !== srcFilter) return false;
+    const hay = `${it.name} ${it.cat} ${it.sub}`.toLowerCase();
+    return words.every(w => hay.includes(w));
+  });
+  $grid.innerHTML = '';
+  shown = 0;
+  render();
+}
+
+document.getElementById('q').addEventListener('input', apply);
+$more.addEventListener('click', render);
+
+fetch('index.json').then(r => r.json()).then(data => {
+  items = data;
+  const groups = {};
+  items.forEach(i => { const g = groupOf(i.src); groups[g] = (groups[g] || 0) + 1; });
+  document.getElementById('counts').textContent =
+    `全 ${items.length} 件（` + Object.entries(groups).map(([g, n]) => `${g} ${n} 件`).join(' / ') + '）';
+  const $chips = document.getElementById('chips');
+  const mk = (label, val) => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (val === 'all' ? ' on' : '');
+    b.textContent = label;
+    b.addEventListener('click', () => {
+      $chips.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+      b.classList.add('on');
+      srcFilter = val;
+      apply();
+      if (typeof buildQueue === 'function') buildQueue();
+    });
+    return b;
+  };
+  $chips.appendChild(mk('すべて', 'all'));
+  Object.keys(groups).sort().forEach(g => $chips.appendChild(mk(g, g)));
+  const q0 = new URLSearchParams(location.search).get('q');
+  if (q0) document.getElementById('q').value = q0;
+  apply();
+  initSwipe();
+});
+</script>
+<script>
+/* ===== カードモード（スワイプ） ===== */
+const GENRE_DEFS = [
+  ['家具', /furniture|bed|chair|table|sofa|lamp|desk|cabinet|storage|shelf|stool|drawer/i],
+  ['建物', /building|house|cabin|castle|architecture|temple|tower|bridge/i],
+  ['乗り物', /vehicle|aircraft|spacecraft|boat|ship|bicycle|train|wheel/i],
+  ['生き物', /animal|character|creature|bird|fish|insect|pet|plant/i],
+  ['機械・部品', /cad|automate|mechanical|gear|engine|machine|part|industrial/i],
+  ['道具・小物', /prop|ultra|attachment|packaging|toy|tool|sport|musical|kitchen|appliance|lighting|garden|office|food/i],
+];
+const GENRE_LIST = ['すべて', ...GENRE_DEFS.map(g => g[0]), 'その他'];
+let cardMode = false, genreIdx = 0, queue = [], qpos = 0;
+
+function genreOf(it) {
+  const hay = `${it.cat} ${it.name} ${it.src}`;
+  for (const [g, re] of GENRE_DEFS) if (re.test(hay)) return g;
+  return 'その他';
+}
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function buildQueue() {
+  const g = GENRE_LIST[genreIdx];
+  queue = shuffle(items.filter(it =>
+    (srcFilter === 'all' || groupOf(it.src) === srcFilter) &&
+    (g === 'すべて' || genreOf(it) === g)));
+  qpos = 0;
+  showCard();
+}
+function showCard() {
+  const g = GENRE_LIST[genreIdx];
+  document.getElementById('genreLabel').innerHTML =
+    `ジャンル: <b></b>（${queue.length} 件中 ${Math.min(qpos + 1, queue.length)} 件目）`;
+  document.querySelector('#genreLabel b').textContent = g;
+  const box = document.getElementById('swipeCard');
+  box.style.transition = 'none';
+  box.style.transform = '';
+  const it = queue[qpos];
+  if (!it) {
+    box.innerHTML = '<div class="body"><div class="name">このジャンルは終わりです</div><div class="meta">上下スワイプかボタンでジャンルを変えてください。</div></div>';
+    return;
+  }
+  box.innerHTML = `
+    <img alt=""><div class="body">
+      <div class="name"></div>
+      <div class="meta"></div>
+      <div class="badges"><span class="badge"></span><span class="badge fmt"></span></div>
+      <div><a target="_blank" rel="noopener">詳細ページ</a>${it.dl ? ' · <a target="_blank" rel="noopener" class="dl">GLB</a>' : ''}</div>
+      <div class="meta lic"></div>
+    </div>`;
+  box.querySelector('img').src = it.img;
+  box.querySelector('.name').textContent = it.name;
+  box.querySelector('.meta').textContent = [it.cat, it.sub].filter(Boolean).join(' · ');
+  box.querySelector('.badge').textContent = it.src;
+  box.querySelector('.badge.fmt').textContent = it.format;
+  box.querySelector('a').href = it.link;
+  if (it.dl) box.querySelector('.dl').href = it.dl;
+  box.querySelector('.lic').textContent = it.lic || '';
+}
+function advance() { qpos++; showCard(); }
+function doFav() {
+  const it = queue[qpos];
+  if (it && !favKeys.has(keyOf(it))) { favs.push(it); saveFavs(); }
+  advance();
+}
+function genreStep(d) {
+  genreIdx = (genreIdx + d + GENRE_LIST.length) % GENRE_LIST.length;
+  buildQueue();
+}
+function setMode(card) {
+  cardMode = card;
+  document.getElementById('swipe').style.display = card ? 'block' : 'none';
+  for (const sel of ['#status', '#grid', '#more', '.note'])
+    document.querySelector(sel).style.display = card ? 'none' : '';
+  document.getElementById('more').style.display = (!card && shown < filtered.length) ? 'block' : 'none';
+  document.getElementById('modeList').classList.toggle('on', !card);
+  document.getElementById('modeCard').classList.toggle('on', card);
+  if (card) buildQueue();
+}
+function initSwipe() {
+  saveFavs();
+  document.getElementById('modeList').addEventListener('click', () => setMode(false));
+  document.getElementById('modeCard').addEventListener('click', () => setMode(true));
+  document.getElementById('favView').addEventListener('click', () => {
+    favOnly = !favOnly;
+    document.getElementById('favView').classList.toggle('on', favOnly);
+    setMode(false);
+    apply();
+  });
+  document.getElementById('btnFav').addEventListener('click', doFav);
+  document.getElementById('btnSkip').addEventListener('click', advance);
+  document.getElementById('btnGenreUp').addEventListener('click', () => genreStep(1));
+  document.getElementById('btnGenreDown').addEventListener('click', () => genreStep(-1));
+  document.addEventListener('keydown', e => {
+    if (!cardMode) return;
+    if (e.key === 'ArrowRight') doFav();
+    else if (e.key === 'ArrowLeft') advance();
+    else if (e.key === 'ArrowDown') genreStep(1);
+    else if (e.key === 'ArrowUp') genreStep(-1);
+  });
+  /* ドラッグ／スワイプ */
+  const card = document.getElementById('swipeCard');
+  const sF = document.getElementById('stampFav'), sS = document.getElementById('stampSkip');
+  let sx = 0, sy = 0, dx = 0, dy = 0, drag = false;
+  card.addEventListener('pointerdown', e => {
+    drag = true; sx = e.clientX; sy = e.clientY; dx = dy = 0;
+    card.style.transition = 'none';
+    card.setPointerCapture(e.pointerId);
+  });
+  card.addEventListener('pointermove', e => {
+    if (!drag) return;
+    dx = e.clientX - sx; dy = e.clientY - sy;
+    card.style.transform = `translate(${dx}px, ${dy}px) rotate(${dx / 22}deg)`;
+    sF.style.opacity = Math.max(0, Math.min(1, dx / 80));
+    sS.style.opacity = Math.max(0, Math.min(1, -dx / 80));
+  });
+  const end = () => {
+    if (!drag) return;
+    drag = false;
+    sF.style.opacity = 0; sS.style.opacity = 0;
+    card.style.transition = 'transform .18s ease';
+    if (dx > 80) doFav();
+    else if (dx < -80) advance();
+    else if (dy < -70) genreStep(1);
+    else if (dy > 70) genreStep(-1);
+    else { card.style.transform = ''; }
+    if (Math.abs(dx) > 80 || Math.abs(dy) > 70) showCard();
+  };
+  card.addEventListener('pointerup', end);
+  card.addEventListener('pointercancel', end);
+  if (new URLSearchParams(location.search).get('mode') === 'card') setMode(true);
+}
+</script>
+</body>
+</html>

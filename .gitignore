@@ -1,0 +1,6 @@
+abo/
+thumbs/
+preview*.html
+preview*.png
+test-index.json
+__pycache__/
