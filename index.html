@@ -31,12 +31,14 @@
   .note { padding:0 20px 26px; color:var(--sub); font-size:12px; line-height:1.7; }
   .modebar { display:flex; gap:8px; margin-top:10px; align-items:center; }
   .modebar .chip.on { background:#1c2430; border-color:#1c2430; }
-  #swipe { display:none; padding:16px 20px 30px; }
-  #genreLabel { text-align:center; font-size:15px; color:var(--sub); margin-bottom:10px; }
-  #genreLabel b { color:var(--ink); font-size:17px; }
-  #stage { position:relative; width:min(430px, 92vw); margin:0 auto; }
-  #swipeCard { background:#fff; border:1px solid var(--line); border-radius:16px; overflow:hidden; touch-action:none; user-select:none; cursor:grab; box-shadow:0 8px 28px rgba(20,30,50,.12); }
-  #swipeCard img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#eef1f5; display:block; pointer-events:none; }
+  #swipe { display:none; padding:12px 10px 30px; }
+  #tagRow { display:flex; gap:7px; overflow-x:auto; padding:2px 2px 10px; -webkit-overflow-scrolling:touch; }
+  #tagRow .chip { white-space:nowrap; flex:0 0 auto; }
+  #tagRow .chip.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #queueInfo { text-align:center; font-size:13px; color:var(--sub); margin-bottom:10px; }
+  #stage { position:relative; width:100%; max-width:880px; margin:0 auto; }
+  #swipeCard { background:#fff; border:1px solid var(--line); border-radius:16px; overflow:hidden; touch-action:pan-y; user-select:none; cursor:grab; box-shadow:0 8px 28px rgba(20,30,50,.12); }
+  #swipeCard img { width:100%; height:min(96vw, 60vh); object-fit:contain; background:#eef1f5; display:block; pointer-events:none; }
   #swipeCard .body { padding:12px 16px 16px; }
   #swipeCard .name { font-size:17px; }
   .stamp { position:absolute; top:16px; font-size:19px; font-weight:700; padding:5px 12px; border-radius:8px; opacity:0; pointer-events:none; }
@@ -63,19 +65,18 @@
   </div>
 </header>
 <section id="swipe">
-  <div id="genreLabel"></div>
+  <div id="tagRow"></div>
+  <div id="queueInfo"></div>
   <div id="stage">
     <div id="swipeCard"></div>
     <div class="stamp" id="stampFav">お気に入り</div>
     <div class="stamp" id="stampSkip">スキップ</div>
   </div>
   <div class="swipeBtns">
-    <button id="btnGenreDown">▲ 前のジャンル</button>
     <button id="btnSkip">✕ スキップ</button>
     <button id="btnFav" class="fav">♥ お気に入り</button>
-    <button id="btnGenreUp">▼ 次のジャンル</button>
   </div>
-  <div id="swipeInfo">右スワイプ＝お気に入り／左スワイプ＝スキップ／上下スワイプ＝ジャンル切替</div>
+  <div id="swipeInfo">右スワイプ＝お気に入り／左スワイプ＝スキップ。絞り込みは上のタグで</div>
 </section>
 <div id="status"></div>
 <main id="grid"></main>
@@ -201,12 +202,47 @@ const GENRE_DEFS = [
   ['道具・小物', /prop|ultra|attachment|packaging|toy|tool|sport|musical|kitchen|appliance|lighting|garden|office|food/i],
 ];
 const GENRE_LIST = ['すべて', ...GENRE_DEFS.map(g => g[0]), 'その他'];
-let cardMode = false, genreIdx = 0, queue = [], qpos = 0;
+let cardMode = false, queue = [], qpos = 0;
+let curTag = { kind: 'all', value: '', label: 'すべて' };
 
 function genreOf(it) {
   const hay = `${it.cat} ${it.name} ${it.src}`;
   for (const [g, re] of GENRE_DEFS) if (re.test(hay)) return g;
   return 'その他';
+}
+function tagMatches(it) {
+  if (curTag.kind === 'all') return true;
+  if (curTag.kind === 'genre') return genreOf(it) === curTag.value;
+  const hay = `${it.name} ${it.cat} ${it.sub}`.toLowerCase();
+  return hay.includes(curTag.value);
+}
+function buildTagRow() {
+  const row = document.getElementById('tagRow');
+  row.innerHTML = '';
+  const tags = [{ kind: 'all', value: '', label: 'すべて' }];
+  for (const g of GENRE_LIST.slice(1))
+    tags.push({ kind: 'genre', value: g, label: g });
+  const stop = new Set(['the', 'and', 'with', 'for', 'from', 'kit', 'set', 'pack']);
+  const freq = {};
+  for (const it of items) {
+    const words = `${it.name} ${it.cat}`.toLowerCase().split(/[^a-z]+/);
+    for (const w of new Set(words))
+      if (w.length >= 4 && !stop.has(w)) freq[w] = (freq[w] || 0) + 1;
+  }
+  Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 16)
+    .forEach(([w]) => tags.push({ kind: 'word', value: w, label: w }));
+  for (const t of tags) {
+    const b = document.createElement('button');
+    b.className = 'chip' + (t.kind === curTag.kind && t.value === curTag.value ? ' on' : '');
+    b.textContent = t.label;
+    b.addEventListener('click', () => {
+      curTag = t;
+      row.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+      b.classList.add('on');
+      buildQueue();
+    });
+    row.appendChild(b);
+  }
 }
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) {
@@ -216,24 +252,22 @@ function shuffle(a) {
   return a;
 }
 function buildQueue() {
-  const g = GENRE_LIST[genreIdx];
   queue = shuffle(items.filter(it =>
-    (srcFilter === 'all' || groupOf(it.src) === srcFilter) &&
-    (g === 'すべて' || genreOf(it) === g)));
+    (srcFilter === 'all' || groupOf(it.src) === srcFilter) && tagMatches(it)));
   qpos = 0;
   showCard();
 }
 function showCard() {
-  const g = GENRE_LIST[genreIdx];
-  document.getElementById('genreLabel').innerHTML =
-    `ジャンル: <b></b>（${queue.length} 件中 ${Math.min(qpos + 1, queue.length)} 件目）`;
-  document.querySelector('#genreLabel b').textContent = g;
+  document.getElementById('queueInfo').textContent =
+    queue.length === 0
+      ? `タグ「${curTag.label}」に該当なし`
+      : `${curTag.label}：${queue.length} 件中 ${Math.min(qpos + 1, queue.length)} 件目`;
   const box = document.getElementById('swipeCard');
   box.style.transition = 'none';
   box.style.transform = '';
   const it = queue[qpos];
   if (!it) {
-    box.innerHTML = '<div class="body"><div class="name">このジャンルは終わりです</div><div class="meta">上下スワイプかボタンでジャンルを変えてください。</div></div>';
+    box.innerHTML = '<div class="body"><div class="name">この条件は終わりです</div><div class="meta">上のタグを変えてください。</div></div>';
     return;
   }
   box.innerHTML = `
@@ -259,10 +293,6 @@ function doFav() {
   if (it && !favKeys.has(keyOf(it))) { favs.push(it); saveFavs(); }
   advance();
 }
-function genreStep(d) {
-  genreIdx = (genreIdx + d + GENRE_LIST.length) % GENRE_LIST.length;
-  buildQueue();
-}
 function setMode(card) {
   cardMode = card;
   document.getElementById('swipe').style.display = card ? 'block' : 'none';
@@ -275,6 +305,7 @@ function setMode(card) {
 }
 function initSwipe() {
   saveFavs();
+  buildTagRow();
   document.getElementById('modeList').addEventListener('click', () => setMode(false));
   document.getElementById('modeCard').addEventListener('click', () => setMode(true));
   document.getElementById('favView').addEventListener('click', () => {
@@ -285,14 +316,10 @@ function initSwipe() {
   });
   document.getElementById('btnFav').addEventListener('click', doFav);
   document.getElementById('btnSkip').addEventListener('click', advance);
-  document.getElementById('btnGenreUp').addEventListener('click', () => genreStep(1));
-  document.getElementById('btnGenreDown').addEventListener('click', () => genreStep(-1));
   document.addEventListener('keydown', e => {
     if (!cardMode) return;
     if (e.key === 'ArrowRight') doFav();
     else if (e.key === 'ArrowLeft') advance();
-    else if (e.key === 'ArrowDown') genreStep(1);
-    else if (e.key === 'ArrowUp') genreStep(-1);
   });
   /* ドラッグ／スワイプ */
   const card = document.getElementById('swipeCard');
@@ -315,12 +342,9 @@ function initSwipe() {
     drag = false;
     sF.style.opacity = 0; sS.style.opacity = 0;
     card.style.transition = 'transform .18s ease';
-    if (dx > 80) doFav();
-    else if (dx < -80) advance();
-    else if (dy < -70) genreStep(1);
-    else if (dy > 70) genreStep(-1);
-    else { card.style.transform = ''; }
-    if (Math.abs(dx) > 80 || Math.abs(dy) > 70) showCard();
+    if (dx > 80) { doFav(); return; }
+    if (dx < -80) { advance(); return; }
+    card.style.transform = '';
   };
   card.addEventListener('pointerup', end);
   card.addEventListener('pointercancel', end);
