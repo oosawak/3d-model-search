@@ -31,6 +31,12 @@
   .card .imgwrap img { width:100%; height:100%; }
   #swipeCard .imgwrap { height:min(96vw, 60vh); }
   #swipeCard .imgwrap img { width:100%; height:100%; }
+  .iconBtn { position:absolute; z-index:3; width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,.95); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; color:#33404f; box-shadow:0 2px 8px rgba(20,30,50,.18); text-decoration:none; }
+  .iconBtn svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .posTL { top:10px; left:10px; }
+  .posBR { right:10px; bottom:10px; }
+  .nameChip { position:absolute; left:10px; bottom:10px; z-index:3; max-width:calc(100% - 80px); background:rgba(23,32,42,.82); color:#fff; font-size:13px; font-weight:600; padding:5px 11px; border-radius:999px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #swipeCard .nameChip { font-size:15px; }
   .card img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#eef1f5; display:block; }
   .card .body { padding:10px 12px 12px; display:flex; flex-direction:column; gap:5px; flex:1; }
   .name { font-size:14px; font-weight:600; line-height:1.35; word-break:break-word; }
@@ -89,7 +95,7 @@
   <div class="swipeBtns">
     <button id="btnSkip">✕ スキップ</button>
   </div>
-  <div id="swipeInfo">右スワイプ＝お気に入り／左スワイプ＝スキップ。画像の星タップでも登録できます。絞り込みは上のタグで</div>
+  <div id="swipeInfo">右スワイプ＝お気に入り／左スワイプ＝スキップ。画像の上のアイコンからも操作できます</div>
 </section>
 <div id="status"></div>
 <main id="grid"></main>
@@ -119,21 +125,23 @@ const $grid = document.getElementById('grid');
 const $status = document.getElementById('status');
 const $more = document.getElementById('more');
 
+const ICON_INFO = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>';
+const ICON_DL = '<svg viewBox="0 0 24 24"><path d="M12 4v10"/><path d="M8 10.5L12 14.5l4-4"/><path d="M5 19h14"/></svg>';
+
 function card(it) {
   const el = document.createElement('div');
   el.className = 'card';
   const meta = [it.cat, it.sub].filter(Boolean).join(' · ');
   el.innerHTML = `
-    <button class="favBtn" title="お気に入り"></button>
-    <div class="imgwrap"><div class="spinner"></div><img loading="lazy" alt=""></div>
+    <div class="imgwrap"><div class="spinner"></div><img loading="lazy" alt="">
+      <button class="favBtn" title="お気に入り"></button>
+      <a class="iconBtn posTL detailLink" target="_blank" rel="noopener" title="詳細ページ">${ICON_INFO}</a>
+      ${it.dl ? `<a class="iconBtn posBR dlLink" target="_blank" rel="noopener" title="GLBを開く">${ICON_DL}</a>` : ''}
+      <span class="nameChip"></span>
+    </div>
     <div class="body">
-      <div class="name"></div>
       <div class="meta"></div>
-      <div class="badges">
-        <span class="badge"></span><span class="badge fmt"></span>
-      </div>
-      <div><a target="_blank" rel="noopener">詳細ページ</a>
-      ${it.dl ? ' · <a target="_blank" rel="noopener" class="dl">GLB</a>' : ''}</div>
+      <div class="meta srcfmt"></div>
       <div class="meta lic"></div>
       <div class="meta credit"></div>
     </div>`;
@@ -146,12 +154,11 @@ function card(it) {
   im.addEventListener('load', imgDone);
   im.addEventListener('error', imgDone);
   im.src = it.img;
-  el.querySelector('.name').textContent = it.name;
+  el.querySelector('.nameChip').textContent = it.name;
   el.querySelector('.meta').textContent = meta;
-  el.querySelector('.badge').textContent = it.src;
-  el.querySelector('.badge.fmt').textContent = it.format;
-  el.querySelector('a').href = it.link;
-  if (it.dl) el.querySelector('.dl').href = it.dl;
+  el.querySelector('.srcfmt').textContent = `${it.src} · ${it.format}`;
+  el.querySelector('.detailLink').href = it.link;
+  if (it.dl) el.querySelector('.dlLink').href = it.dl;
   el.querySelector('.lic').textContent = it.lic || '';
   el.querySelector('.credit').textContent = it.credit || '';
   const fb = el.querySelector('.favBtn');
@@ -313,12 +320,15 @@ function showCard() {
     return;
   }
   box.innerHTML = `
-    <button class="favBtn" title="お気に入り"></button>
-    <div class="imgwrap"><div class="spinner"></div><img alt=""></div><div class="body">
-      <div class="name"></div>
+    <div class="imgwrap"><div class="spinner"></div><img alt="">
+      <button class="favBtn" title="お気に入り"></button>
+      <a class="iconBtn posTL detailLink" target="_blank" rel="noopener" title="詳細ページ">${ICON_INFO}</a>
+      ${it.dl ? `<a class="iconBtn posBR dlLink" target="_blank" rel="noopener" title="GLBを開く">${ICON_DL}</a>` : ''}
+      <span class="nameChip"></span>
+    </div>
+    <div class="body">
       <div class="meta"></div>
-      <div class="badges"><span class="badge"></span><span class="badge fmt"></span></div>
-      <div><a target="_blank" rel="noopener">詳細ページ</a>${it.dl ? ' · <a target="_blank" rel="noopener" class="dl">GLB</a>' : ''}</div>
+      <div class="meta srcfmt"></div>
       <div class="meta lic"></div>
     </div>`;
   const sim = box.querySelector('img');
@@ -330,13 +340,13 @@ function showCard() {
   sim.addEventListener('load', sDone);
   sim.addEventListener('error', sDone);
   sim.src = it.img;
-  box.querySelector('.name').textContent = it.name;
+  box.querySelector('.nameChip').textContent = it.name;
   box.querySelector('.meta').textContent = [it.cat, it.sub].filter(Boolean).join(' · ');
-  box.querySelector('.badge').textContent = it.src;
-  box.querySelector('.badge.fmt').textContent = it.format;
-  box.querySelector('a').href = it.link;
-  if (it.dl) box.querySelector('.dl').href = it.dl;
+  box.querySelector('.srcfmt').textContent = `${it.src} · ${it.format}`;
+  box.querySelector('.detailLink').href = it.link;
+  if (it.dl) box.querySelector('.dlLink').href = it.dl;
   box.querySelector('.lic').textContent = it.lic || '';
+  box.querySelectorAll('.iconBtn').forEach(b => b.addEventListener('pointerdown', ev => ev.stopPropagation()));
   const fb = box.querySelector('.favBtn');
   const paint = () => {
     const on = favKeys.has(keyOf(it));
