@@ -17,7 +17,9 @@
   .chip.on { background:var(--accent); border-color:var(--accent); color:#fff; }
   #status { padding:12px 20px 0; color:var(--sub); font-size:13px; }
   #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; padding:14px 20px 8px; }
-  .card { background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; position:relative; }
+  .favBtn { position:absolute; top:8px; right:8px; z-index:2; width:38px; height:38px; border-radius:50%; border:1px solid var(--line); background:rgba(255,255,255,.92); font-size:19px; line-height:1; color:#9aa5b1; cursor:pointer; }
+  .favBtn.on { color:#e8a100; border-color:#e8a100; }
   .card img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#eef1f5; display:block; }
   .card .body { padding:10px 12px 12px; display:flex; flex-direction:column; gap:5px; flex:1; }
   .name { font-size:14px; font-weight:600; line-height:1.35; word-break:break-word; }
@@ -111,6 +113,7 @@ function card(it) {
   el.className = 'card';
   const meta = [it.cat, it.sub].filter(Boolean).join(' · ');
   el.innerHTML = `
+    <button class="favBtn" title="お気に入り"></button>
     <img loading="lazy" alt="">
     <div class="body">
       <div class="name"></div>
@@ -132,6 +135,21 @@ function card(it) {
   if (it.dl) el.querySelector('.dl').href = it.dl;
   el.querySelector('.lic').textContent = it.lic || '';
   el.querySelector('.credit').textContent = it.credit || '';
+  const fb = el.querySelector('.favBtn');
+  const paint = () => {
+    const on = favKeys.has(keyOf(it));
+    fb.textContent = on ? '★' : '☆';
+    fb.classList.toggle('on', on);
+  };
+  paint();
+  fb.addEventListener('click', () => {
+    const k = keyOf(it);
+    if (favKeys.has(k)) favs = favs.filter(f => keyOf(f) !== k);
+    else favs.push(it);
+    saveFavs();
+    paint();
+    if (favOnly) apply();
+  });
   return el;
 }
 
