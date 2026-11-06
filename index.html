@@ -27,6 +27,7 @@
   .imgwrap .spinner { position:absolute; top:50%; left:50%; margin:-17px 0 0 -17px; z-index:1; }
   .imgwrap img { opacity:0; transition:opacity .25s ease; }
   .imgwrap img.loaded { opacity:1; }
+  .noimg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--sub); font-size:13px; }
   .card .imgwrap { aspect-ratio:1/1; }
   .card .imgwrap img { width:100%; height:100%; }
   #swipeCard .imgwrap { height:min(96vw, 60vh); }
@@ -151,9 +152,20 @@ function card(it) {
     const sp = el.querySelector('.imgwrap .spinner');
     if (sp) sp.remove();
   };
-  im.addEventListener('load', imgDone);
-  im.addEventListener('error', imgDone);
-  im.src = it.img;
+  const imgFail = () => {
+    const sp = el.querySelector('.imgwrap .spinner');
+    if (sp) sp.remove();
+    im.remove();
+    const d = document.createElement('div');
+    d.className = 'noimg';
+    d.textContent = '画像なし';
+    el.querySelector('.imgwrap').appendChild(d);
+  };
+  if (it.img) {
+    im.addEventListener('load', imgDone);
+    im.addEventListener('error', imgFail);
+    im.src = it.img;
+  } else imgFail();
   el.querySelector('.nameChip').textContent = it.name;
   el.querySelector('.meta').textContent = meta;
   el.querySelector('.srcfmt').textContent = `${it.src} · ${it.format}`;
@@ -337,9 +349,20 @@ function showCard() {
     const sp = box.querySelector('.imgwrap .spinner');
     if (sp) sp.remove();
   };
-  sim.addEventListener('load', sDone);
-  sim.addEventListener('error', sDone);
-  sim.src = it.img;
+  const sFail = () => {
+    const sp = box.querySelector('.imgwrap .spinner');
+    if (sp) sp.remove();
+    sim.remove();
+    const d = document.createElement('div');
+    d.className = 'noimg';
+    d.textContent = '画像なし';
+    box.querySelector('.imgwrap').appendChild(d);
+  };
+  if (it.img) {
+    sim.addEventListener('load', sDone);
+    sim.addEventListener('error', sFail);
+    sim.src = it.img;
+  } else sFail();
   box.querySelector('.nameChip').textContent = it.name;
   box.querySelector('.meta').textContent = [it.cat, it.sub].filter(Boolean).join(' · ');
   box.querySelector('.srcfmt').textContent = `${it.src} · ${it.format}`;

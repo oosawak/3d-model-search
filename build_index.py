@@ -70,31 +70,76 @@ def fetch_rows(dataset, want):
     return rows
 
 
+def _sniff_ext(data: bytes) -> str:
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return ""
+
+
+THUMB_DIR = Path(__file__).parent / "sand-thumbs"
+
+
+def localize_render(src_url: str, ds: str, idx: int) -> str:
+    """署名付きURLは数時間で失効するため、render画像を自前で保持する。"""
+    if not src_url:
+        return ""
+    THUMB_DIR.mkdir(exist_ok=True)
+    stem = f"{ds.replace('sand3d-', '')}-{idx:04d}"
+    for ext in (".jpg", ".png", ".webp"):
+        if (THUMB_DIR / (stem + ext)).exists():
+            return f"sand-thumbs/{stem}{ext}"
+    for attempt in range(2):
+        p = subprocess.run(["curl", "-s", "--max-time", "60", src_url],
+                           capture_output=True, timeout=90)
+        data = p.stdout or b""
+        ext = _sniff_ext(data)
+        if ext:
+            (THUMB_DIR / (stem + ext)).write_bytes(data)
+            return f"sand-thumbs/{stem}{ext}"
+        time.sleep(1)
+    print(f"  render取得失敗: {ds} #{idx}")
+    return ""
+
+
 def sand3d_items():
+    from concurrent.futures import ThreadPoolExecutor
     items = []
     for ds, want in SAND3D_SAMPLES.items():
         print(f"Sand3D {ds}: {want} 件取得中...")
         rows = fetch_rows(ds, want)
         print(f"  -> {len(rows)} 件")
-        for r in rows:
+        ds_items = []
+        jobs = []
+        for i, r in enumerate(rows):
             row = r["row"]
             attr = row.get("attribution") or ""
             m = re.match(r'"([^"]+)"', attr)
             name = m.group(1) if m else (row.get("entry") or row["id"]).replace("_", " ")
             render = row.get("render") or {}
-            items.append({
+            ds_items.append({
                 "name": name,
                 "cat": row.get("family", ""),
                 "sub": row.get("entry", ""),
                 "src": f"Sand3D {ds.replace('sand3d-', '')}",
                 "format": "Python code",
-                "img": render.get("src", ""),
+                "img": "",
                 "link": f"https://huggingface.co/datasets/Sandflow/{ds}",
                 "dl": "",
                 "lic": row.get("license", ""),
                 "credit": (row.get("attribution") or "").strip()[:200],
                 "joints": row.get("n_joints", 0),
             })
+            jobs.append((render.get("src", ""), ds, i))
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            for it, local in zip(ds_items, ex.map(lambda j: localize_render(*j), jobs)):
+                it["img"] = local
+        ok = sum(1 for it in ds_items if it["img"])
+        print(f"  render自前化: {ok}/{len(ds_items)} 件")
+        items += ds_items
     return items
 
 
